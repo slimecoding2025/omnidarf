@@ -1,6 +1,7 @@
 // app/api/transform/route.ts
 
 import { NextRequest, NextResponse } from "next/server";
+import { jsonrepair } from "jsonrepair";
 import type { ContentKit, TransformRequest, TransformResponse } from "@/types";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ const DEFAULT_MODEL = "inclusionai/ling-3.0-flash-fin:free";
 
 // Site metadata OpenRouter uses for free-tier attribution / rankings.
 // Update these to match your deployed domain and app name.
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://omnidarf.vercel.app/";
 const SITE_NAME = "OmniDraft AI";
 
 /* ------------------------------------------------------------------ */
@@ -151,10 +152,20 @@ function safeParseContentKit(raw: string): ContentKit {
     // continue to repair attempt
   }
 
-  // Attempt 2: repair then parse
+  // Attempt 2: our lightweight repair pass, then parse
   try {
     const repaired = repairJson(candidate);
     return JSON.parse(repaired) as ContentKit;
+  } catch {
+    // continue to the stronger repair library
+  }
+
+  // Attempt 3: `jsonrepair` handles the messier cases some free models
+  // produce — unescaped control characters, stray newlines inside strings,
+  // missing commas between array elements, single quotes, etc.
+  try {
+    const strongRepair = jsonrepair(candidate);
+    return JSON.parse(strongRepair) as ContentKit;
   } catch (err) {
     throw new Error(
       `Unable to parse AI response as valid JSON after repair attempts: ${
@@ -223,49 +234,50 @@ ${input.trim().slice(0, 12000)}
 
 Generate the full OmniDraft AI content kit as specified in the system prompt.`;
 
-    const openRouterResponse = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": SITE_URL,
-        "X-Title": SITE_NAME,
-      },
-      body: JSON.stringify({
-        model: model || DEFAULT_MODEL,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 4000,
-      }),
-    });
-
-    if (!openRouterResponse.ok) {
-      const errText = await openRouterResponse.text().catch(() => "");
-      return NextResponse.json<TransformResponse>(
-        {
-          success: false,
-          error: `OpenRouter request failed (${openRouterResponse.status}): ${
-            errText || openRouterResponse.statusText
-          }`,
+    async function callModel(temperature: number) {
+      const res = await fetch(OPENROUTER_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          "HTTP-Referer": SITE_URL,
+          "X-Title": SITE_NAME,
         },
-        { status: 502 }
-      );
+        body: JSON.stringify({
+          model: model || DEFAULT_MODEL,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          temperature,
+          max_tokens: 4000,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        throw new Error(
+          `OpenRouter request failed (${res.status}): ${errText || res.statusText}`
+        );
+      }
+
+      const completion = await res.json();
+      const rawContent: string | undefined =
+        completion?.choices?.[0]?.message?.content;
+
+      if (!rawContent) {
+        throw new Error("The model returned an empty response.");
+      }
+
+      return rawContent;
     }
 
-    const completion = await openRouterResponse.json();
-
-    const rawContent: string | undefined =
-      completion?.choices?.[0]?.message?.content;
-
-    if (!rawContent) {
+    let rawContent: string;
+    try {
+      rawContent = await callModel(0.7);
+    } catch (err) {
       return NextResponse.json<TransformResponse>(
-        {
-          success: false,
-          error: "The model returned an empty response. Please try again.",
-        },
+        { success: false, error: (err as Error).message },
         { status: 502 }
       );
     }
@@ -273,17 +285,24 @@ Generate the full OmniDraft AI content kit as specified in the system prompt.`;
     let contentKit: ContentKit;
     try {
       contentKit = safeParseContentKit(rawContent);
-    } catch (parseError) {
-      return NextResponse.json<TransformResponse>(
-        {
-          success: false,
-          error: `Failed to parse the AI response as JSON. ${
-            (parseError as Error).message
-          }`,
-          raw: rawContent.slice(0, 4000),
-        },
-        { status: 502 }
-      );
+    } catch (firstParseError) {
+      // Malformed JSON is often a one-off model hiccup — retry once with
+      // temperature 0 (more deterministic) before giving up entirely.
+      try {
+        rawContent = await callModel(0);
+        contentKit = safeParseContentKit(rawContent);
+      } catch (retryError) {
+        return NextResponse.json<TransformResponse>(
+          {
+            success: false,
+            error: `Failed to parse the AI response as JSON, even after a retry. ${
+              (retryError as Error).message
+            }`,
+            raw: rawContent.slice(0, 4000),
+          },
+          { status: 502 }
+        );
+      }
     }
 
     if (!validateContentKit(contentKit)) {
