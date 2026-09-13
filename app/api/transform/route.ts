@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = (await req.json()) as TransformRequest;
-    const { input, inputType, model } = body;
+    const { input, inputType, locale, model } = body;
 
     if (!input || typeof input !== "string" || input.trim().length < 3) {
       return NextResponse.json<TransformResponse>(
@@ -233,8 +233,12 @@ ${input.trim().slice(0, 12000)}
 """
 
 Generate the full OmniDraft AI content kit as specified in the system prompt.`;
+    const languageInstruction = locale && locale !== "en"
+      ? `Write every generated title and content field in ${locale === "ar" ? "Arabic" : locale === "de" ? "German" : locale === "fr" ? "French" : "Italian"}. Keep the JSON keys exactly as specified.`
+      : "Write the generated content in English.";
+    const localizedUserPrompt = `${userPrompt}\n\n${languageInstruction}`;
 
-    async function callModel(temperature: number) {
+    const callModel = async (temperature: number) => {
       const res = await fetch(OPENROUTER_URL, {
         method: "POST",
         headers: {
@@ -247,7 +251,7 @@ Generate the full OmniDraft AI content kit as specified in the system prompt.`;
           model: model || DEFAULT_MODEL,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
+            { role: "user", content: localizedUserPrompt },
           ],
           temperature,
           max_tokens: 4000,
@@ -270,7 +274,7 @@ Generate the full OmniDraft AI content kit as specified in the system prompt.`;
       }
 
       return rawContent;
-    }
+    };
 
     let rawContent: string;
     try {

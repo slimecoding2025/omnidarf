@@ -51,6 +51,7 @@ export type InputType = "text" | "url" | "topic";
 export interface TransformRequest {
   input: string;
   inputType?: InputType;
+  locale?: "en" | "ar" | "de" | "fr" | "it";
   model?: string; // optional OpenRouter model override
 }
 

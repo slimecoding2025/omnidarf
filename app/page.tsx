@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Wand2,
@@ -31,6 +31,7 @@ import type {
   TemplateShortcut,
   TransformResponse,
 } from "@/types";
+import { getTranslations, LOCALES, type Locale } from "@/lib/i18n";
 
 /* ------------------------------------------------------------------ */
 /*  Static Config                                                      */
@@ -73,19 +74,11 @@ const TABS: { key: OutputTabKey; label: string; icon: React.ElementType }[] = [
   { key: "visuals", label: "Visual Prompts", icon: ImageIcon },
 ];
 
-const PROGRESS_STEPS = [
-  "Reading your source",
-  "Drafting social formats",
-  "Storyboarding the script",
-  "Distilling key takeaways",
-  "Writing visual prompts",
-];
-
 /* ------------------------------------------------------------------ */
 /*  Small Reusable Bits                                                */
 /* ------------------------------------------------------------------ */
 
-function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
 
   async function handleCopy() {
@@ -104,7 +97,7 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
       className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
     >
       {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-      {copied ? "Copied" : label}
+      {copied ? "Copied" : label || "Copy"}
     </button>
   );
 }
@@ -133,7 +126,7 @@ function SectionHeading({
 /*  Output Tab: Social Media Kit                                       */
 /* ------------------------------------------------------------------ */
 
-function SocialKitView({ kit }: { kit: ContentKit }) {
+function SocialKitView({ kit, copyLabel }: { kit: ContentKit; copyLabel: string }) {
   const { socialMedia } = kit;
   const hashtagLine = socialMedia.hashtags.map((h) => `#${h}`).join(" ");
 
@@ -145,7 +138,7 @@ function SocialKitView({ kit }: { kit: ContentKit }) {
             <div className="flex items-center gap-2 text-sm font-medium">
               <Twitter className="h-4 w-4 text-sky-500" /> X / Twitter thread
             </div>
-            <CopyButton text={socialMedia.twitterThread.join("\n\n")} />
+            <CopyButton text={socialMedia.twitterThread.join("\n\n")} label={copyLabel} />
           </div>
           <ol className="space-y-3">
             {socialMedia.twitterThread.map((tweet, i) => (
@@ -167,7 +160,7 @@ function SocialKitView({ kit }: { kit: ContentKit }) {
             <div className="flex items-center gap-2 text-sm font-medium">
               <Linkedin className="h-4 w-4 text-blue-600" /> LinkedIn post
             </div>
-            <CopyButton text={socialMedia.linkedInPost} />
+            <CopyButton text={socialMedia.linkedInPost} label={copyLabel} />
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
             {socialMedia.linkedInPost}
@@ -181,7 +174,7 @@ function SocialKitView({ kit }: { kit: ContentKit }) {
             <div className="flex items-center gap-2 text-sm font-medium">
               <Instagram className="h-4 w-4 text-pink-500" /> Instagram caption
             </div>
-            <CopyButton text={`${socialMedia.instagramCaption}\n\n${hashtagLine}`} />
+            <CopyButton text={`${socialMedia.instagramCaption}\n\n${hashtagLine}`} label={copyLabel} />
           </div>
           <p className="whitespace-pre-line text-sm leading-relaxed text-foreground/90">
             {socialMedia.instagramCaption}
@@ -203,7 +196,7 @@ function SocialKitView({ kit }: { kit: ContentKit }) {
 /*  Output Tab: Video / Reels Script                                   */
 /* ------------------------------------------------------------------ */
 
-function VideoScriptView({ kit }: { kit: ContentKit }) {
+function VideoScriptView({ kit, t }: { kit: ContentKit; t: ReturnType<typeof getTranslations> }) {
   const { videoScript } = kit;
 
   const fullScript = [
@@ -223,11 +216,11 @@ function VideoScriptView({ kit }: { kit: ContentKit }) {
               Estimated runtime · {videoScript.estimatedDurationSeconds}s
             </div>
           </div>
-          <CopyButton text={fullScript} label="Copy full script" />
+          <CopyButton text={fullScript} label={t.copyFullScript} />
         </div>
 
         <div className="mb-6 rounded-lg border border-amber-500/30 bg-amber-500/5 p-4">
-          <p className="text-xs font-medium uppercase tracking-wide text-amber-600">Hook</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-amber-600">{t.hook}</p>
           <p className="mt-1 text-base font-medium leading-snug">{videoScript.hook}</p>
         </div>
 
@@ -237,11 +230,11 @@ function VideoScriptView({ kit }: { kit: ContentKit }) {
               <span className="absolute -left-[29px] top-1 h-3 w-3 rounded-full border-2 border-background bg-foreground/70" />
               <p className="text-xs font-medium text-muted-foreground">{beat.timestamp}</p>
               <p className="mt-1 text-sm">
-                <span className="font-medium text-foreground/80">Visual — </span>
+                <span className="font-medium text-foreground/80">{t.visual} — </span>
                 {beat.visual}
               </p>
               <p className="mt-1 text-sm">
-                <span className="font-medium text-foreground/80">Narration — </span>
+                <span className="font-medium text-foreground/80">{t.narration} — </span>
                 {beat.narration}
               </p>
             </div>
@@ -250,7 +243,7 @@ function VideoScriptView({ kit }: { kit: ContentKit }) {
 
         <div className="mt-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-4">
           <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">
-            Call to action
+            {t.callToAction}
           </p>
           <p className="mt-1 text-base font-medium leading-snug">{videoScript.callToAction}</p>
         </div>
@@ -263,7 +256,7 @@ function VideoScriptView({ kit }: { kit: ContentKit }) {
 /*  Output Tab: Flashcards                                             */
 /* ------------------------------------------------------------------ */
 
-function FlashcardsView({ kit }: { kit: ContentKit }) {
+function FlashcardsView({ kit, copyLabel }: { kit: ContentKit; copyLabel: string }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {kit.flashcards.map((card) => (
@@ -276,7 +269,7 @@ function FlashcardsView({ kit }: { kit: ContentKit }) {
               </p>
             </div>
             <div className="flex justify-end">
-              <CopyButton text={`${card.title}\n${card.content}`} />
+              <CopyButton text={`${card.title}\n${card.content}`} label={copyLabel} />
             </div>
           </CardContent>
         </Card>
@@ -289,7 +282,7 @@ function FlashcardsView({ kit }: { kit: ContentKit }) {
 /*  Output Tab: Visual Prompts                                         */
 /* ------------------------------------------------------------------ */
 
-function VisualPromptsView({ kit }: { kit: ContentKit }) {
+function VisualPromptsView({ kit, copyLabel }: { kit: ContentKit; copyLabel: string }) {
   return (
     <div className="space-y-4">
       {kit.visualPrompts.map((vp) => (
@@ -299,7 +292,7 @@ function VisualPromptsView({ kit }: { kit: ContentKit }) {
               <Badge variant="outline" className="rounded-full font-normal">
                 {vp.style}
               </Badge>
-              <CopyButton text={vp.prompt} />
+              <CopyButton text={vp.prompt} label={copyLabel} />
             </div>
             <p className="font-mono text-sm leading-relaxed text-foreground/90">{vp.prompt}</p>
           </CardContent>
@@ -370,6 +363,19 @@ function downloadMarkdown(kit: ContentKit) {
 /* ------------------------------------------------------------------ */
 
 export default function OmniDraftPage() {
+  const [locale, setLocale] = useState<Locale>("en");
+  const t = getTranslations(locale);
+  const progressSteps = [t.readingSource, t.draftingSocial, t.storyboarding, t.distilling, t.writingVisuals];
+
+  const localizedTemplates = TEMPLATES.map((template) => ({
+    ...template,
+    ...t.templates[template.id],
+  }));
+
+  useEffect(() => {
+    document.documentElement.lang = locale;
+    document.documentElement.dir = locale === "ar" ? "rtl" : "ltr";
+  }, [locale]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [progressStep, setProgressStep] = useState(0);
@@ -392,27 +398,27 @@ export default function OmniDraftPage() {
     // Lightweight simulated progress while the real request is in flight —
     // gives the user a sense of motion during a potentially slow model call.
     const progressInterval = setInterval(() => {
-      setProgressStep((prev) => (prev < PROGRESS_STEPS.length - 1 ? prev + 1 : prev));
+      setProgressStep((prev) => (prev < progressSteps.length - 1 ? prev + 1 : prev));
     }, 1400);
 
     try {
       const res = await fetch("/api/transform", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ input, inputType: "text" }),
+        body: JSON.stringify({ input, inputType: "text", locale }),
       });
 
       const json: TransformResponse = await res.json();
 
       if (!json.success || !json.data) {
-        setError(json.error || "Something went wrong generating your content kit.");
+        setError(json.error || t.generationFailed);
         return;
       }
 
       setKit(json.data);
       setActiveTab("social");
     } catch (err) {
-      setError((err as Error).message || "Network error. Please try again.");
+      setError((err as Error).message || t.networkError);
     } finally {
       clearInterval(progressInterval);
       setLoading(false);
@@ -421,7 +427,7 @@ export default function OmniDraftPage() {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main dir={locale === "ar" ? "rtl" : "ltr"} className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-5xl px-6 py-12">
         {/* Header */}
         <header className="mb-10 flex items-center justify-between">
@@ -431,6 +437,13 @@ export default function OmniDraftPage() {
             </div>
             <span className="text-lg font-semibold tracking-tight">OmniDraft AI</span>
           </div>
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span>{t.language}</span>
+              <select value={locale} onChange={(event) => setLocale(event.target.value as Locale)} className="rounded-md border border-border bg-card px-2 py-1 text-foreground">
+                {LOCALES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
           <a
             href="https://openrouter.ai"
             target="_blank"
@@ -439,24 +452,25 @@ export default function OmniDraftPage() {
           >
             Powered by mouhamed salim bousmina
           </a>
+          </div>
         </header>
 
         {/* Input Console */}
         <section className="mb-12">
           <SectionHeading
-            eyebrow="Step one"
-            title="Paste your source, or a single idea"
+            eyebrow={t.stepOne}
+            title={t.inputTitle}
           />
 
           <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Paste an article, raw notes, a link, or just describe a topic — e.g. 'why async communication beats meetings for remote teams'"
+              placeholder={t.inputPlaceholder}
               className="min-h-[160px] resize-none border-none bg-transparent p-2 text-base shadow-none focus-visible:ring-0"
             />
             <div className="mt-2 flex items-center justify-between border-t border-border/60 pt-3">
-              <span className="text-xs text-muted-foreground">{charCount} characters</span>
+              <span className="text-xs text-muted-foreground">{charCount} {t.characters}</span>
               <Button
                 onClick={handleGenerate}
                 disabled={!canSubmit}
@@ -465,12 +479,12 @@ export default function OmniDraftPage() {
                 {loading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    Generating
+                    {t.generating}
                   </>
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                    Generate content kit
+                    {t.generate}
                   </>
                 )}
               </Button>
@@ -479,7 +493,7 @@ export default function OmniDraftPage() {
 
           {/* Template shortcuts */}
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {TEMPLATES.map((tpl) => (
+            {localizedTemplates.map((tpl) => (
               <button
                 key={tpl.id}
                 onClick={() => setInput(tpl.samplePrompt)}
@@ -510,13 +524,13 @@ export default function OmniDraftPage() {
                       className="h-full rounded-full bg-foreground"
                       initial={{ width: "5%" }}
                       animate={{
-                        width: `${((progressStep + 1) / PROGRESS_STEPS.length) * 100}%`,
+                        width: `${((progressStep + 1) / progressSteps.length) * 100}%`,
                       }}
                       transition={{ duration: 0.6, ease: "easeInOut" }}
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {PROGRESS_STEPS[progressStep]}…
+                    {progressSteps[progressStep]}…
                   </p>
                 </div>
               </motion.div>
@@ -534,7 +548,7 @@ export default function OmniDraftPage() {
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
                 <div>
-                  <p className="text-sm font-medium text-destructive">Generation failed</p>
+                  <p className="text-sm font-medium text-destructive">{t.generationFailed}</p>
                   <p className="mt-0.5 text-sm text-muted-foreground">{error}</p>
                 </div>
               </motion.div>
@@ -551,11 +565,11 @@ export default function OmniDraftPage() {
               transition={{ duration: 0.4, ease: "easeOut" }}
             >
               <SectionHeading
-                eyebrow="Step two"
+                eyebrow={t.stepTwo}
                 title={kit.title}
                 action={
                   <div className="flex gap-2">
-                    <CopyButton text={allContentText} label="Copy all" />
+                    <CopyButton text={allContentText} label={t.copyAll} />
                     <Button
                       variant="outline"
                       size="sm"
@@ -563,7 +577,7 @@ export default function OmniDraftPage() {
                       onClick={() => downloadMarkdown(kit)}
                     >
                       <Download className="h-3.5 w-3.5" />
-                      Export .md
+                      {t.exportMarkdown}
                     </Button>
                   </div>
                 }
@@ -583,7 +597,7 @@ export default function OmniDraftPage() {
                         className="gap-1.5 rounded-full border border-border/60 data-[state=active]:border-foreground data-[state=active]:bg-foreground data-[state=active]:text-background"
                       >
                         <Icon className="h-3.5 w-3.5" />
-                        {tab.label}
+                        {({ social: t.socialKit, video: t.videoScript, flashcards: t.takeaways, visuals: t.visualPrompts })[tab.key]}
                       </TabsTrigger>
                     );
                   })}
@@ -598,19 +612,19 @@ export default function OmniDraftPage() {
                     transition={{ duration: 0.25, ease: "easeOut" }}
                   >
                     <TabsContent value="social" forceMount={activeTab === "social" ? true : undefined}>
-                      {activeTab === "social" && <SocialKitView kit={kit} />}
+                      {activeTab === "social" && <SocialKitView kit={kit} copyLabel={t.copy} />}
                     </TabsContent>
                     <TabsContent value="video" forceMount={activeTab === "video" ? true : undefined}>
-                      {activeTab === "video" && <VideoScriptView kit={kit} />}
+                      {activeTab === "video" && <VideoScriptView kit={kit} t={t} />}
                     </TabsContent>
                     <TabsContent
                       value="flashcards"
                       forceMount={activeTab === "flashcards" ? true : undefined}
                     >
-                      {activeTab === "flashcards" && <FlashcardsView kit={kit} />}
+                      {activeTab === "flashcards" && <FlashcardsView kit={kit} copyLabel={t.copy} />}
                     </TabsContent>
                     <TabsContent value="visuals" forceMount={activeTab === "visuals" ? true : undefined}>
-                      {activeTab === "visuals" && <VisualPromptsView kit={kit} />}
+                      {activeTab === "visuals" && <VisualPromptsView kit={kit} copyLabel={t.copy} />}
                     </TabsContent>
                   </motion.div>
                 </AnimatePresence>
